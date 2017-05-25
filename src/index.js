@@ -1,5 +1,6 @@
 "use strict";
 var vm = require("vm");
+var camelCase = require("camel-case");
 var typeTranslation = {};
 typeTranslation["int"] = "number";
 typeTranslation["double"] = "number";
@@ -105,7 +106,12 @@ function generateClass(className, inherits, input, isInterface, options) {
         if (options && !options.stripReadOnly && isReadOnly) {
             definition += "readonly ";
         }
-        definition += propertyName;
+        if (options.camelCase) {
+            definition += camelCase(propertyName);
+        }
+        else {
+            definition += propertyName;
+        }
         if (isOptional) {
             definition += "?";
         }

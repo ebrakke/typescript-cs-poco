@@ -1,4 +1,5 @@
 import vm = require("vm");
+import camelCase = require("camel-case");
 
 var typeTranslation = {};
 
@@ -125,7 +126,11 @@ function generateClass(className: string, inherits, input, isInterface?: boolean
             definition += "readonly ";
         }
 
-        definition += propertyName;
+        if (options.camelCase) {
+            definition += camelCase(propertyName);
+        } else {
+            definition += propertyName;
+        }
 
         if (isOptional) {
             definition += "?";

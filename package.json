@@ -26,5 +26,8 @@
     "gulp": "^3.9.0",
     "jasmine-node": "^1.14.5",
     "tsd": "^0.6.5"
+  },
+  "dependencies": {
+    "camel-case": "^3.0.0"
   }
 }
