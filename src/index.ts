@@ -62,7 +62,151 @@ function removeComments(code: string) {
     return lines.join("\n");
 }
 
-function generateInterface(className: string, inherits, input, isInterface?: boolean, options?) {
+function generateClass(className: string, inherits, input, isInterface?: boolean, options?) {
+    var propertyRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?([\w\d\._<>, \[\]]+?)(\??) ([\w\d]+)\s*(?:{\s*get;\s*(?:private\s*)?set;\s*}|;)/gm;
+    var methodRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?(?:(async) )?(?:([\w\d\._<>, \[\]]+?) )?([\w\d]+)\(((?:.?\s?)*?)\)\s*/gm;
+    
+    var propertyNameResolver = options && options.propertyNameResolver;
+    var methodNameResolver = options && options.methodNameResolver;
+    var interfaceNameResolver = options && options.interfaceNameResolver;
+
+    var originalClassName = className;
+
+    var ignoreInheritance = options && options.ignoreInheritance;
+    if (inherits && ignoreInheritance !== true && (!ignoreInheritance || ignoreInheritance.indexOf(inherits) === -1)) {
+        className += ` extends ${inherits}`;
+    }
+
+    var definition = `export class ${className} {\n`;
+
+    if (options && options.dateTimeToDate) {
+        typeTranslation["DateTime"] = "Date";
+        typeTranslation["System.DateTime"] = "Date";
+    } else {
+        typeTranslation["DateTime"] = "string";
+        typeTranslation["System.DateTime"] = "string";
+    }
+
+    if (options && options.customTypeTranslations) {
+        for (var key in options.customTypeTranslations) {
+            if (options.customTypeTranslations.hasOwnProperty(key)) {
+                typeTranslation[key] = options.customTypeTranslations[key];
+            }
+        }
+    }
+
+    var leadingWhitespace = "    ";
+
+    var properties = [];
+    for (let propertyResult of safeRegex(propertyRegex, input, options)) {
+        var visibility = propertyResult[1];
+        if(!isInterface && visibility !== "public") continue;
+
+        if (options && options.ignoreVirtual) {
+            let isVirtual = propertyResult[2] === "virtual";
+            if (isVirtual){ 
+                continue;
+            }
+        }
+
+        var varType = getVarType(propertyResult[3], "property-type", options);
+
+        var isReadOnly = propertyResult[2] === "readonly";
+        var isOptional = propertyResult[4] === "?";
+
+        var propertyName = propertyResult[5];
+        if (propertyNameResolver) {
+            propertyName = propertyNameResolver(propertyName);
+        }
+        definition += leadingWhitespace;
+        definition += visibility + " ";
+
+        if (options && !options.stripReadOnly && isReadOnly) {
+            definition += "readonly ";
+        }
+
+        definition += propertyName;
+
+        if (isOptional) {
+            definition += "?";
+        }
+
+        definition += `: ${varType};\n`;
+
+        properties.push({ name: propertyName, type: varType });
+    }
+
+    var methods = [];
+    if (options && !options.ignoreMethods) {
+        for (let methodResult of safeRegex(methodRegex, input, options)) {
+            let visibility = methodResult[1];
+            if(!isInterface && visibility !== "public") continue;
+
+            let varType = getVarType(methodResult[4], "method-return-type", options);
+
+            var isAsync = methodResult[3] === "async";
+            if(isAsync) {
+                if(varType.indexOf("<") > -1 && varType.indexOf(">") > -1) {
+                    varType = varType.replace(/^Task\<([^?\s]*)\>$/gm, "$1");
+                    varType = `Promise<${varType}>`;
+                } else {
+                    varType = varType.replace("Task", "Promise<void>");
+                }
+            }
+            
+            if (options && options.ignoreVirtual) {
+                var isVirtual = methodResult[2] === "virtual";
+                if (isVirtual) {
+                    continue;
+                }
+            }
+
+            var methodName = methodResult[5];
+            if(methodName.toLowerCase() === originalClassName.toLowerCase()) continue;
+
+            if (methodNameResolver) {
+                methodName = methodNameResolver(methodName);
+            }
+            definition += leadingWhitespace + methodName + "(";
+
+            var methodArguments = methodResult[6];
+            var argumentsRegex = /\s*(?:\[[\w\d]+\])?([^?\s]*) ([\w\d]+)(?:\,\s*)?/gm;
+            
+            var argumentDefinition = "";
+            for(var argumentResult of safeRegex(argumentsRegex, methodArguments, options)) {
+                if (argumentDefinition !== "") {
+                    argumentDefinition += ", ";
+                }
+                argumentDefinition += argumentResult[2] + ": " + getVarType(argumentResult[1], "method-argument-type", options);
+            }
+
+            definition += argumentDefinition;
+
+
+            definition += `): ${varType};\n`;
+
+            methods.push({ name: methodName, returnType: varType });
+        }
+    }
+
+    if(options && options.additionalInterfaceCodeResolver) {
+        var customCode = options.additionalInterfaceCodeResolver(leadingWhitespace, originalClassName, properties, methods);
+        definition += `\n${leadingWhitespace}${customCode}\n`;
+    }
+
+    definition += `${leadingWhitespace}constructor(values?: Object){\n`;
+    definition += `${leadingWhitespace}${leadingWhitespace}Object.assign(this, values);\n`
+    definition += `${leadingWhitespace}}\n`;
+
+    definition += "}\n";
+
+    return definition;
+}
+
+function generateInterface(className: string, inherits, input, isInterface?: boolean, options:any = {}) {
+    if (options.generateClass) {
+        return generateClass.apply(this, arguments);
+    }
     var propertyRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?([\w\d\._<>, \[\]]+?)(\??) ([\w\d]+)\s*(?:{\s*get;\s*(?:private\s*)?set;\s*}|;)/gm;
     var methodRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?(?:(async) )?(?:([\w\d\._<>, \[\]]+?) )?([\w\d]+)\(((?:.?\s?)*?)\)\s*/gm;
     

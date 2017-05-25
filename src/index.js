@@ -53,29 +53,18 @@ function removeComments(code) {
         .map(function (line) { return line.replace(lineCommentRegex, ""); });
     return lines.join("\n");
 }
-function generateInterface(className, inherits, input, isInterface, options) {
+function generateClass(className, inherits, input, isInterface, options) {
     var propertyRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?([\w\d\._<>, \[\]]+?)(\??) ([\w\d]+)\s*(?:{\s*get;\s*(?:private\s*)?set;\s*}|;)/gm;
     var methodRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?(?:(async) )?(?:([\w\d\._<>, \[\]]+?) )?([\w\d]+)\(((?:.?\s?)*?)\)\s*/gm;
     var propertyNameResolver = options && options.propertyNameResolver;
     var methodNameResolver = options && options.methodNameResolver;
     var interfaceNameResolver = options && options.interfaceNameResolver;
     var originalClassName = className;
-    if (inherits && interfaceNameResolver) {
-        inherits = interfaceNameResolver(inherits);
-    }
-    if (interfaceNameResolver) {
-        className = interfaceNameResolver(className);
-    }
-    if (options && options.prefixWithI) {
-        if (inherits)
-            inherits = "I" + inherits;
-        className = "I" + className;
-    }
     var ignoreInheritance = options && options.ignoreInheritance;
     if (inherits && ignoreInheritance !== true && (!ignoreInheritance || ignoreInheritance.indexOf(inherits) === -1)) {
         className += " extends " + inherits;
     }
-    var definition = "interface " + className + " {\n";
+    var definition = "export class " + className + " {\n";
     if (options && options.dateTimeToDate) {
         typeTranslation["DateTime"] = "Date";
         typeTranslation["System.DateTime"] = "Date";
@@ -112,6 +101,7 @@ function generateInterface(className, inherits, input, isInterface, options) {
             propertyName = propertyNameResolver(propertyName);
         }
         definition += leadingWhitespace;
+        definition += visibility + " ";
         if (options && !options.stripReadOnly && isReadOnly) {
             definition += "readonly ";
         }
@@ -166,6 +156,135 @@ function generateInterface(className, inherits, input, isInterface, options) {
             definition += argumentDefinition;
             definition += "): " + varType_1 + ";\n";
             methods.push({ name: methodName, returnType: varType_1 });
+        }
+    }
+    if (options && options.additionalInterfaceCodeResolver) {
+        var customCode = options.additionalInterfaceCodeResolver(leadingWhitespace, originalClassName, properties, methods);
+        definition += "\n" + leadingWhitespace + customCode + "\n";
+    }
+    definition += leadingWhitespace + "constructor(values?: Object){\n";
+    definition += "" + leadingWhitespace + leadingWhitespace + "Object.assign(this, values);\n";
+    definition += leadingWhitespace + "}\n";
+    definition += "}\n";
+    return definition;
+}
+function generateInterface(className, inherits, input, isInterface, options) {
+    if (options === void 0) { options = {}; }
+    if (options.generateClass) {
+        return generateClass.apply(this, arguments);
+    }
+    var propertyRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?([\w\d\._<>, \[\]]+?)(\??) ([\w\d]+)\s*(?:{\s*get;\s*(?:private\s*)?set;\s*}|;)/gm;
+    var methodRegex = /(?:(?:((?:public)?)|(?:private)|(?:protected)|(?:internal)|(?:protected internal)) )+(?:(virtual|readonly) )?(?:(async) )?(?:([\w\d\._<>, \[\]]+?) )?([\w\d]+)\(((?:.?\s?)*?)\)\s*/gm;
+    var propertyNameResolver = options && options.propertyNameResolver;
+    var methodNameResolver = options && options.methodNameResolver;
+    var interfaceNameResolver = options && options.interfaceNameResolver;
+    var originalClassName = className;
+    if (inherits && interfaceNameResolver) {
+        inherits = interfaceNameResolver(inherits);
+    }
+    if (interfaceNameResolver) {
+        className = interfaceNameResolver(className);
+    }
+    if (options && options.prefixWithI) {
+        if (inherits)
+            inherits = "I" + inherits;
+        className = "I" + className;
+    }
+    var ignoreInheritance = options && options.ignoreInheritance;
+    if (inherits && ignoreInheritance !== true && (!ignoreInheritance || ignoreInheritance.indexOf(inherits) === -1)) {
+        className += " extends " + inherits;
+    }
+    var definition = "interface " + className + " {\n";
+    if (options && options.dateTimeToDate) {
+        typeTranslation["DateTime"] = "Date";
+        typeTranslation["System.DateTime"] = "Date";
+    }
+    else {
+        typeTranslation["DateTime"] = "string";
+        typeTranslation["System.DateTime"] = "string";
+    }
+    if (options && options.customTypeTranslations) {
+        for (var key in options.customTypeTranslations) {
+            if (options.customTypeTranslations.hasOwnProperty(key)) {
+                typeTranslation[key] = options.customTypeTranslations[key];
+            }
+        }
+    }
+    var leadingWhitespace = "    ";
+    var properties = [];
+    for (var _i = 0, _a = safeRegex(propertyRegex, input, options); _i < _a.length; _i++) {
+        var propertyResult = _a[_i];
+        var visibility = propertyResult[1];
+        if (!isInterface && visibility !== "public")
+            continue;
+        if (options && options.ignoreVirtual) {
+            var isVirtual_2 = propertyResult[2] === "virtual";
+            if (isVirtual_2) {
+                continue;
+            }
+        }
+        var varType = getVarType(propertyResult[3], "property-type", options);
+        var isReadOnly = propertyResult[2] === "readonly";
+        var isOptional = propertyResult[4] === "?";
+        var propertyName = propertyResult[5];
+        if (propertyNameResolver) {
+            propertyName = propertyNameResolver(propertyName);
+        }
+        definition += leadingWhitespace;
+        if (options && !options.stripReadOnly && isReadOnly) {
+            definition += "readonly ";
+        }
+        definition += propertyName;
+        if (isOptional) {
+            definition += "?";
+        }
+        definition += ": " + varType + ";\n";
+        properties.push({ name: propertyName, type: varType });
+    }
+    var methods = [];
+    if (options && !options.ignoreMethods) {
+        for (var _b = 0, _c = safeRegex(methodRegex, input, options); _b < _c.length; _b++) {
+            var methodResult = _c[_b];
+            var visibility_2 = methodResult[1];
+            if (!isInterface && visibility_2 !== "public")
+                continue;
+            var varType_2 = getVarType(methodResult[4], "method-return-type", options);
+            var isAsync = methodResult[3] === "async";
+            if (isAsync) {
+                if (varType_2.indexOf("<") > -1 && varType_2.indexOf(">") > -1) {
+                    varType_2 = varType_2.replace(/^Task\<([^?\s]*)\>$/gm, "$1");
+                    varType_2 = "Promise<" + varType_2 + ">";
+                }
+                else {
+                    varType_2 = varType_2.replace("Task", "Promise<void>");
+                }
+            }
+            if (options && options.ignoreVirtual) {
+                var isVirtual = methodResult[2] === "virtual";
+                if (isVirtual) {
+                    continue;
+                }
+            }
+            var methodName = methodResult[5];
+            if (methodName.toLowerCase() === originalClassName.toLowerCase())
+                continue;
+            if (methodNameResolver) {
+                methodName = methodNameResolver(methodName);
+            }
+            definition += leadingWhitespace + methodName + "(";
+            var methodArguments = methodResult[6];
+            var argumentsRegex = /\s*(?:\[[\w\d]+\])?([^?\s]*) ([\w\d]+)(?:\,\s*)?/gm;
+            var argumentDefinition = "";
+            for (var _d = 0, _e = safeRegex(argumentsRegex, methodArguments, options); _d < _e.length; _d++) {
+                var argumentResult = _e[_d];
+                if (argumentDefinition !== "") {
+                    argumentDefinition += ", ";
+                }
+                argumentDefinition += argumentResult[2] + ": " + getVarType(argumentResult[1], "method-argument-type", options);
+            }
+            definition += argumentDefinition;
+            definition += "): " + varType_2 + ";\n";
+            methods.push({ name: methodName, returnType: varType_2 });
         }
     }
     if (options && options.additionalInterfaceCodeResolver) {
